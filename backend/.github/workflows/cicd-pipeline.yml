@@ -1,0 +1,122 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Validate PR Title
+        uses: kontrolplane/pull-request-title-validator@v1.5.0 # Replace with your chosen action
+        with:
+          types: "feat,fix,chore,docs,style,refactor,perf,test,build,ci"
+          scopes: ".*" # Allow any scope, or define specific ones
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gradle clean
+        run: |
+          ./gradlew clean
+
+      - name: Gradle spotlessCheck
+        run: |
+          ./gradlew spotlessCheck
+
+      - name: Gradle test
+        run: |
+          ./gradlew test -Dspring.profiles.active=test
+
+      - name: Check Code Coverage
+        run: |
+          ./gradlew jacocoTestCoverageVerification
+
+      - name: Gradle build
+        run: |
+          ./gradlew build -Dspring.profiles.active=test
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/gradle-jdk17@master
+        continue-on-error: true # To make sure that SARIF upload gets called
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk.sarif
+      - name: Upload result to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk.sarif
+
+#      - name: Login Dockerhub
+#        env:
+#          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+#        run: |
+#          echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+#
+#      - name: Build Docker Image
+#        env:
+#          IMAGE: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}
+#        run: |
+#          docker build -t $IMAGE:latest .
+
+#      - name: Push Docker Image
+#        env:
+#          IMAGE: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}
+#        run: |
+#          docker push $IMAGE:latest
+#
+#      - name: Delete old Docker Hub tags (keep last 5)
+#        env:
+#          USERNAME: ${{ secrets.DOCKER_USERNAME }}
+#          PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+#          REPO: ${{ secrets.DOCKER_IMAGE_NAME }}
+#        run: |
+#          TOKEN=$(curl -s -H "Content-Type: application/json" \
+#          -X POST \
+#          -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}" \
+#          https://hub.docker.com/v2/users/login/ | jq -r .token)
+#
+#          TAGS=$(curl -s \
+#          -H "Authorization: JWT $TOKEN" \
+#          "https://hub.docker.com/v2/repositories/$USERNAME/$REPO/tags?page_size=100" \
+#          | jq -r '.results | sort_by(.last_updated) | reverse | .[].name')
+#
+#          COUNT=0
+#          for TAG in $TAGS; do
+#            COUNT=$((COUNT+1))
+#
+#            if [ $COUNT -gt 5 ]; then
+#              echo "Deleting tag: $TAG"
+#              curl -s -X DELETE \
+#              -H "Authorization: JWT $TOKEN" \
+#              https://hub.docker.com/v2/repositories/$USERNAME/$REPO/tags/$TAG/
+#            fi
+#          done
+
+#  deploy:
+#    runs-on: self-hosted
+#    needs: build
+#    if: github.ref == 'refs/heads/anhkiet-branch'
+#
+#    steps:
+#      - name: Pull Docker image
+#        run: docker pull ${{secrets.DOCKER_USERNAME}}/${{secrets.DOCKER_IMAGE_NAME}}:latest
+#
+#      - name: Delete old container if existed
+#        run: docker rm -f ${{secrets.DOCKER_CONTAINER_NAME}} || true
+#
+#      - name: Run Docker container
+#        run: |
+#          docker run -d -p ${{secrets.SERVER_PORT}}:${{secrets.SERVER_PORT}} \
+#            -e DB_HOST=${{ secrets.DB_HOST }} \
+#            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+#            --name ${{secrets.DOCKER_CONTAINER_NAME}} ${{secrets.DOCKER_USERNAME}}/${{secrets.DOCKER_IMAGE_NAME}}

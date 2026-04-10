@@ -1,0 +1,180 @@
+plugins {
+	id 'java'
+	id 'jacoco'
+	id "com.diffplug.spotless" version '7.2.1'
+	id 'org.springframework.boot' version '3.5.11'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.spring'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+spotless {
+	java {
+		target 'src/**/*.java'
+		googleJavaFormat()
+		removeUnusedImports()
+	}
+	groovyGradle {
+		target '*.gradle'
+		greclipse()
+	}
+}
+
+compileJava {
+	dependsOn tasks.spotlessApply
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	commonsLangVersion = '3.18.0'
+	jsonwebtokenVersion = '0.13.0'
+	dropboxVersion = '7.0.0'
+	springAiVersion = '1.1.2'
+	wireMockVersion = '3.13.0'
+	embeddedRedisVersion = '0.7.3'
+}
+
+dependencies {
+	// web
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// actuator
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+	// tracing - OpenTelemetry to Tempo
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+	implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+
+	// logging - Loki
+	implementation 'com.github.loki4j:loki-logback-appender:1.5.2'
+
+	// data
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// security
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation "io.jsonwebtoken:jjwt-api:${jsonwebtokenVersion}"
+	runtimeOnly "io.jsonwebtoken:jjwt-impl:${jsonwebtokenVersion}"
+	runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jsonwebtokenVersion}"
+
+	// lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// utils
+	implementation "org.apache.commons:commons-lang3:${commonsLangVersion}"
+
+	// swagger
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13'
+
+	// s3
+	implementation 'software.amazon.awssdk:s3:2.37.2'
+
+	// validation
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// jobrunr
+	implementation "org.jobrunr:jobrunr-spring-boot-3-starter:8.0.2"
+
+	// stripe
+	implementation 'com.stripe:stripe-java:31.3.0'
+
+	// Open AI
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
+	// redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// test
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// test - lombok support
+	testCompileOnly 'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	// test - h2 in-memory database
+	testRuntimeOnly 'com.h2database:h2'
+
+	// test - wiremock for mocking external HTTP APIs (OpenAI, Stripe, AWS S3, etc.)
+	testImplementation "org.wiremock:wiremock-standalone:${wireMockVersion}"
+
+	// test - spring security test
+	testImplementation 'org.springframework.security:spring-security-test'
+
+	// test - embedded redis
+	testImplementation("it.ozimov:embedded-redis:${embeddedRedisVersion}") {
+		exclude group: 'org.slf4j', module: 'slf4j-simple'
+	}
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+jacoco {
+	toolVersion = "0.8.12"
+}
+
+test {
+	useJUnitPlatform()
+	finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+		html.required = true
+	}
+	afterEvaluate {
+		classDirectories.setFrom(files(classDirectories.files.collect {
+			fileTree(dir: it, exclude: [
+				"**/dto/*",
+				"**/entity/*",
+				"**/configuration/*"
+			])
+		}))
+	}
+}
+
+jacocoTestCoverageVerification {
+	dependsOn jacocoTestReport
+	violationRules {
+		rule {
+			limit {
+				minimum = 0.70
+			}
+		}
+	}
+	afterEvaluate {
+		classDirectories.setFrom(files(classDirectories.files.collect {
+			fileTree(dir: it, exclude: [
+				"**/dto/*",
+				"**/entity/*",
+				"**/configuration/*"
+			])
+		}))
+	}
+}
+check.dependsOn jacocoTestCoverageVerification
